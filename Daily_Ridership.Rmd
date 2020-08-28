@@ -1,0 +1,312 @@
+---
+title: "Daily Preliminary Ridership Report"
+author: "Samuel B. Carter"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = paste0(format(Sys.Date(), "%Y%m%d"), " Preliminary Ridership Report",'.html')) })
+output:
+  html_document:
+    # toc: true
+    df_print: paged
+    fig_cap: true
+    code_folding: hide
+    
+---
+
+These data are for general ridership monitoring purposes only. These data are unofficial and subject to change at any time.
+
+Data are sourced from fareboxes for local routes and automatic passenger counters for Routes 90, 901, and 902. 
+
+```{r include = FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+```{r revision history}
+
+# 5/7/20 - Created script.
+
+```
+
+```{r future improvements}
+
+# 5/7/20 - Add comparison the previous day's results.
+#           - one way may be to export csv, and then read-in that csv, comparing the two dates...
+#        - Add good way to add 901/902.
+#             - Alternatively, consider APCs for 901/902?
+#        - Add error term 
+#             - (ie, if bogus data, don't send report!)
+
+# 5/13/20 - Consider leading with graph of last thirty days.
+#         - Consider arranging table by most recent date.
+#         - Consider function to search for *most recent* GFI export, in
+#           case a day is missed... (UPDATE: DONE!)
+
+# 5/15/20 - Consider adding simple narrative description of ridership change...
+#         - Need to be able to upload data to sandbox..
+
+# 5/17/20 - Another problem: because it looks for the last date, it won't work
+#           *after* you run a report for the first time each day..
+
+# 5/19/20 - I don't think the note from 5/17 is an issue.
+#           However, should probably move operative folder to shared drive..
+
+
+
+```
+
+```{r notes}
+
+# 5/7/20 - This does not currently include route 999. This means historical
+#          data will be less accurate but more recent data will be more
+#          accurate (I believe... or at least it'll compare to the daily report
+#          better! Once those 999 routes are inputted.. then.. it won't match
+#          the previous, daily report, but the totals should align with the revised report...
+#          which leads me to believe they should be included!)
+
+#          Update: let's include 999 for now. (It may also be worth researching whether 999 has increased
+#          since the introduction of 901/902...)
+
+```
+
+```{r set libraries, include=FALSE, results='hide'}
+
+library(tidyverse)
+library(kableExtra)
+library(scales)
+library(lubridate)
+library(odbc)
+
+```
+
+```{r define date variables}
+
+# set epoch date variable
+
+GFI_COVID_start <- as.Date("2020-03-01")
+
+# set dynamic date variables 
+
+GFI_yesterday <- lubridate::floor_date(Sys.Date() -1, unit = "day")
+
+GFI_today <- lubridate::floor_date(Sys.Date(), unit = "day")
+
+# set other variables
+
+route_set <- c(2:6,8,10:16,18:19,21,24:26,
+                      28,30,31,34,37:39,55,86,87, 999)
+```
+
+This report covers service between `r GFI_COVID_start` and `r GFI_yesterday`.
+
+```{r get and clean data, results='asis'}
+# gather, clean, transform data
+
+# set GFI connection
+
+con <- dbConnect(odbc(), "gfi_ds1_indy", Driver = "SQL Anywhere 12")
+  
+# get ev data
+
+ev_recent_summary <- tbl(con, dbplyr::in_schema("DBA", "ev")) %>%
+  filter(ts >= GFI_COVID_start, ts < GFI_today,
+         route %in% route_set,
+         rdr_c > 0) %>%
+  mutate(Date = as.Date(str_sub(ts, 1, 10))) %>%
+  group_by(Date) %>%
+  summarise(rdr_sum = sum(rdr_c, na.rm = TRUE)) %>%
+  arrange(Date) %>%
+  collect()
+
+# get APC data
+
+con <- DBI::dbConnect(odbc::odbc(), Driver = "SQL Server", Server = "REPSQLP01VW", 
+                      Database = "Steve_Temp", Port = 1433)
+
+Apc_recent <- tbl(con, "Apc_Data") %>%
+  filter(MDCID >= 1950, MDCID < 2000 | MDCID == 1899,
+         GPS_Time >= "2020-02-29 00:00:00", 
+         Route %in% c("90", "901", "902")) %>%
+  collect()
+
+```
+
+```{r clean APC data, results='asis'}
+
+Apc_recent$Date <- as.Date(str_sub(Apc_recent$GPS_Time, 1, 10))
+
+Apc_recent$Clock_Time <- str_sub(Apc_recent$GPS_Time, 12, 19)
+
+Apc_recent$DateTest <- ifelse(Apc_recent$Clock_Time < 
+                                "03:00:00", 1, 0)
+
+Apc_recent$Transit_Day_Unix <- ifelse(Apc_recent$DateTest == 1,
+                                      lubridate::as_date(Apc_recent$Date - 1),
+                                      Apc_recent$Date)
+
+Apc_recent$Epoch_Date <- as.Date("1970-01-01")
+
+Apc_recent$Transit_Day <- Apc_recent$Epoch_Date + lubridate::days(Apc_recent$Transit_Day_Unix)
+
+```
+
+```{r transform APC data, results='asis'}
+
+# inspect ridership per trip per day...
+
+APC_summary_90 <- Apc_recent %>%
+  filter(Route %in% c("90")) %>%
+  group_by(Transit_Day) %>%
+  summarise(Boardings = sum(Boarding),
+            Alightings = sum(Alighting),
+            Difference = sum(Boarding) - sum(Alighting)) %>%
+  arrange(desc(Transit_Day))
+
+APC_summary_901 <- Apc_recent %>%
+  filter(Route %in% c("901")) %>%
+  group_by(Transit_Day) %>%
+  summarise(Boardings = sum(Boarding),
+            Alightings = sum(Alighting),
+            Difference = sum(Boarding) - sum(Alighting)) %>%
+  arrange(desc(Transit_Day))
+
+APC_summary_902 <- Apc_recent %>%
+  filter(Route %in% c("902")) %>%
+  group_by(Transit_Day) %>%
+  summarise(Boardings = sum(Boarding),
+            Alightings = sum(Alighting),
+            Difference = sum(Boarding) - sum(Alighting)) %>%
+  arrange(desc(Transit_Day))
+
+```
+
+```{r merge 901/902 with ev_recent and clean, results = 'asis'}
+
+ev_recent_summary_joined <- ev_recent_summary %>%
+  left_join(APC_summary_901, by = c("Date" = "Transit_Day")) %>%
+  left_join(APC_summary_902, by = c("Date" = "Transit_Day")) %>%
+  mutate(Total_Boardings = rdr_sum + Boardings.x + Boardings.y)
+
+ev_recent_summary_joined <- select(ev_recent_summary_joined, 
+                                   Date, 
+                                   Ridership = Total_Boardings)
+
+```
+
+```{r export GFI summary import old GFI summary, results = 'asis'}
+
+write.csv(ev_recent_summary_joined, paste0(GFI_today, "-GFI-ev",".csv"), row.names = FALSE)
+
+most_recent_GFI <- sort(str_sub(list.files()[str_which(list.files(), "-GFI-ev.csv$")], 1, 10), TRUE)[2]
+
+yesterday_GFI <- read.csv(paste0(most_recent_GFI, "-GFI-ev",".csv"),
+                          colClasses = c("Date" = "Date"))
+
+```
+
+```{r merge today and yesteday, make comparison, results = 'asis'}
+
+ev_recent_summary_joined <- ev_recent_summary_joined %>%
+  left_join(yesterday_GFI, by = "Date") %>%
+  mutate('Ridership Change' = Ridership.x -  Ridership.y)
+
+```
+
+```{r merge Red Line, format table, results = 'asis'}
+
+ev_recent_summary_joined_final <- ev_recent_summary_joined %>%
+  left_join(APC_summary_90, by = c("Date" = "Transit_Day")) %>%
+  mutate(System_Ridership = Boardings + Ridership.x ) %>%
+  select(Date, 'Local Passenger Trips' = Ridership.x, 
+         'Red Line Passenger Trips' = Boardings,
+          'Fixed-Route Passenger Trips' = System_Ridership)
+
+```
+
+```{r make ggplot of past thirty days, results = 'asis', out.width = "100%", out.height= "100%"}
+
+ev_recent_summary_joined_final %>% 
+  filter(Date >= as.Date(lubridate::today(),format='%d-%B-%Y')-31) %>% # for past thirty days data
+  mutate(Date = format(Date, '%m/%d   %a')) %>%
+  mutate(Date = str_replace_all(Date, "^0[:digit:]/", str_sub(Date, 2, 3) )) %>%
+  pivot_longer(cols = c('Local Passenger Trips', 'Red Line Passenger Trips'), names_to = "Mode") %>%
+  ggplot() + 
+  geom_bar(aes(x = factor(Date), y= value, 
+               fill = factor(Mode, levels = c('Local Passenger Trips', 'Red Line Passenger Trips'))),
+           stat = "identity", alpha = .8,
+           position = "stack") +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.1))+ # make size 6, if doing 60 day comparison
+  labs(title = "Unofficial Fixed-Route Passenger Trips",
+       subtitle = "Past Thirty Days",
+       caption = "Figures are subject to change as data become more complete",
+       y = "Boardings",
+       x = "") + 
+  scale_fill_discrete(name = "Mode") +
+  ylim(0,40000)
+
+```
+
+### Unofficial Fixed-Route Passenger Trips
+```{r Unofficial Fixed-Route Passenger Trips, results='asis' }
+
+
+ev_recent_summary_joined_final %>%
+  arrange(desc(Date)) %>%
+  mutate('Day of Week' = lubridate::wday(Date, abbr = FALSE, label = TRUE),
+         Date = format(Date, '%m/%d')) %>%
+  select(Date, 'Day of Week', everything()) %>%
+kable(., format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),  full_width = F)
+
+  
+```
+
+### Change since last Report
+```{r Change since last report, results='asis'}
+
+ev_recent_summary_joined_final %>%
+  left_join(yesterday_GFI, by = "Date") %>%
+  mutate('Day of Week' = lubridate::wday(Date, abbr = FALSE, label = TRUE),
+         Date = format(Date, '%m/%d/%y')) %>%
+  select(Ridership_today = 'Local Passenger Trips', everything(),
+         RL = 'Red Line Passenger Trips') %>%
+  mutate('Difference' = Ridership_today - Ridership, 
+         'Ridership in Last Report' = RL + Ridership) %>%
+  select(Date, 'Day of Week', 'Ridership Today' = 'Fixed-Route Passenger Trips',
+         'Ridership in Last Report', 'Difference') %>%
+  filter(Difference > 0) %>%
+  arrange(desc(Date)) %>%
+kable(., format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),  
+                full_width = F,
+                )
+
+  
+```
+
+```{r ggplot since 3/2, results = 'asis', out.width = "100%", out.height= "100%"}
+
+ev_recent_summary_joined_final %>% 
+  filter(Date >="2020-03-02") %>% # since 3/2
+  # mutate(Date = format(Date, '%m/%d   %a')) %>%
+  # mutate(Date = str_replace_all(Date, "^0[:digit:]/", str_sub(Date, 2, 3) )) %>%
+  pivot_longer(cols = c('Local Passenger Trips', 'Red Line Passenger Trips'), names_to = "Mode") %>%
+  ggplot() + 
+  geom_bar(aes(x = Date, y= value, 
+               fill = factor(Mode, levels = c('Local Passenger Trips', 'Red Line Passenger Trips'))),
+           stat = "identity", alpha = .8,
+           position = "stack") +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.1))+ # make size 6, if doing 60 day comparison
+  labs(title = "Unofficial Fixed-Route Passenger Trips",
+       subtitle = "Since March 2nd, 2020",
+       caption = "Figures are subject to change as data become more complete",
+       y = "Boardings",
+       x = "") + 
+  scale_fill_discrete(name = "Mode") +
+  ylim(0,40000) #+
+  # scale_x_date(name = 'My date axis title', date_breaks = '2 days',
+  #       date_labels = '%m/%d   %a',
+  #       limits = as.Date(c("2020-03-01", GFI_today)),
+  #       expand_scale(mult = 1, add = 0)) #+
+  # xlim(as.Date(c('2020-03-02')), as.Date(GFI_yesterday))# come back to this...
+
+```
+If you believe this report is in error, please contact Samuel Carter (scarter@indygo.net) or Michael Nugent (michael.nugent@indygo.net). Report last revised 2020-08-06.
