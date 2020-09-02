@@ -1,6 +1,6 @@
 ---
 title: "Daily Preliminary Ridership Report"
-author: "Samuel B. Carter"
+author: "Mike Nugent, Jr."
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = paste0(format(Sys.Date(), "%Y%m%d"), " Preliminary Ridership Report",'.html')) })
 output:
@@ -18,6 +18,7 @@ Data are sourced from fareboxes for local routes and automatic passenger counter
 
 ```{r include = FALSE}
 knitr::opts_chunk$set(echo=FALSE)
+
 ```
 
 ```{r revision history}
@@ -102,7 +103,9 @@ This report covers service between `r GFI_COVID_start` and `r GFI_yesterday`.
 
 # set GFI connection
 
-con <- dbConnect(odbc(), "gfi_ds1_indy", Driver = "SQL Anywhere 12")
+con <- dbConnect(odbc(), "gfi",
+                 uid = "guest",
+                 pwd = "guest")
   
 # get ev data
 
@@ -148,7 +151,7 @@ Apc_recent$Transit_Day <- Apc_recent$Epoch_Date + lubridate::days(Apc_recent$Tra
 
 ```
 
-```{r transform APC data, results='asis'}
+```{r transform APC data, results='asis', message=F}
 
 # inspect ridership per trip per day...
 
@@ -221,7 +224,7 @@ ev_recent_summary_joined_final <- ev_recent_summary_joined %>%
 
 ```
 
-```{r make ggplot of past thirty days, results = 'asis', out.width = "100%", out.height= "100%"}
+```{r make ggplot of past thirty days, results = 'asis', out.width = "100%", out.height= "100%",warning=F}
 
 ev_recent_summary_joined_final %>% 
   filter(Date >= as.Date(lubridate::today(),format='%d-%B-%Y')-31) %>% # for past thirty days data
@@ -309,4 +312,4 @@ ev_recent_summary_joined_final %>%
   # xlim(as.Date(c('2020-03-02')), as.Date(GFI_yesterday))# come back to this...
 
 ```
-If you believe this report is in error, please contact Samuel Carter (scarter@indygo.net) or Michael Nugent (michael.nugent@indygo.net). Report last revised 2020-08-06.
+If you believe this report is in error, please contact Michael Nugent (michael.nugent@indygo.net). Report last revised 2020-08-06.
