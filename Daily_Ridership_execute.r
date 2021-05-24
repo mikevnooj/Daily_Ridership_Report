@@ -5,7 +5,7 @@
 
 Sys.setenv(RSTUDIO_PANDOC="C:/Program Files/RStudio/bin/pandoc")
 
-rmarkdown::render(input = 'c:/users/Michael.Nugent/Documents/Projects/R_Projects/nooj/Reporting/Daily/Daily_Ridership_Report/Daily_Ridership.Rmd', 
+rmarkdown::render(input = 'c:/users/Michael.Nugent/OneDrive - IndyGo/Documents/Projects/R_Projects/nooj/Reporting/Daily/Daily_Ridership_Report/Daily_Ridership.Rmd', 
                   output_file = paste0(format(Sys.Date(), "%Y%m%d"), " Preliminary Ridership Report",'.html'))
 
 
@@ -17,4 +17,5 @@ rmarkdown::render(input = 'c:/users/Michael.Nugent/Documents/Projects/R_Projects
 #   ,subject = "TEST"
 #   ,credentials = creds_key("outlook")
 #   )
+
 
